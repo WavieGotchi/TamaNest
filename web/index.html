@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TamaNest Installer</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- TamaNest tweaks (web/installer.js): device filter + Android support, safer USB handling after an install, our
+     loading egg and icons in the install window. Loaded first: ESP Web Tools checks for Web Serial when it loads. -->
+<script type="module" src="installer.js"></script>
+<!-- ESP Web Tools (Apache-2.0): flashes the device from the browser over Web Serial. Pinned version. -->
+<script type="module" src="https://unpkg.com/esp-web-tools@10.1.0/dist/web/install-button.js?module"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #a8d47c; --mid: #80a862; --ink: #1c2a14; --light: #8eba68; --panel: #c4e4a0;
+          --pixel: "Press Start 2P", ui-monospace, "Courier New", monospace;
+          --text: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 var(--text); padding: 28px 16px; overflow-wrap: anywhere; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { margin: 0 0 12px; font: 2rem/1.2 var(--pixel); letter-spacing: 1px; }
+  .sub { margin: 0 0 24px; }
+  .band { background: var(--mid); padding: 10px 14px 8px; border-bottom: 3px solid var(--ink);
+          font: 0.8rem/1.4 var(--pixel); margin-top: 28px; }
+  .box { background: var(--panel); padding: 14px 18px; border: 2px solid var(--ink); border-top: 0; }
+  .box > :first-child { margin-top: 0; }
+  .box > :last-child { margin-bottom: 0; }
+  p { margin: 0 0 12px; }
+  ol { padding-left: 22px; margin: 0 0 12px; }
+  li { margin: 6px 0; }
+  b { font-weight: 700; }
+  code { font: inherit; font-weight: 700; background: rgba(28, 42, 20, 0.08); padding: 0 4px; border-radius: 3px; }
+  .install { text-align: center; padding: 16px 0 8px; }
+  esp-web-install-button button[slot="activate"] { font: 0.95rem/1 var(--pixel); color: var(--bg);
+         background: var(--ink); border: none; padding: 18px 28px; cursor: pointer; }
+  esp-web-install-button button[slot="activate"]:hover { background: #2c4020; }
+  .warn { font-size: 0.92rem; }
+  .usbmode { font-size: 0.85rem; margin: 12px 0 0; }
+  a { color: var(--ink); }
+  footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid var(--mid); text-align: center;
+           font-size: 0.85rem; line-height: 1.6; color: #34482a; }
+  footer p { margin: 0 0 6px; }
+  footer .by { font: 0.7rem/1.6 var(--pixel); color: var(--ink); margin-bottom: 10px; }
+  /* The install window (ESP Web Tools dialog): its own blue/white Material theme is set on the element itself,
+     so these page rules on the element win and give it the page's look. */
+  ewt-install-dialog, ewt-no-port-picked-dialog {
+    --roboto-font: var(--text);
+    --text-color: rgba(28, 42, 20, 0.85);
+    --danger-color: #a8321e;
+    --md-sys-color-primary: var(--ink);
+    --md-sys-color-on-primary: var(--bg);
+    --md-sys-color-surface: var(--panel);
+    --md-sys-color-surface-container: var(--panel);
+    --md-sys-color-surface-container-high: var(--panel);
+    --md-sys-color-surface-container-highest: #b4d890;
+    --md-sys-color-secondary-container: var(--bg);
+    --md-sys-color-on-secondary-container: var(--ink);
+    --md-sys-color-on-surface: var(--ink);
+    --md-sys-color-on-surface-variant: #34482a;
+    --md-sys-color-outline: var(--ink);
+    --md-sys-color-outline-variant: var(--mid);
+    --md-sys-color-secondary: var(--ink);
+    --md-dialog-container-shape: 0px;
+    --md-dialog-headline-font: var(--pixel);
+    --md-dialog-headline-size: 1rem;
+    --md-dialog-headline-line-height: 1.6;
+    --md-text-button-label-text-font: var(--pixel);
+    --md-text-button-label-text-size: 0.7rem;
+    --md-text-button-container-shape: 0px;
+    --md-list-item-label-text-color: var(--ink);
+    --md-list-item-supporting-text-color: #34482a;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>TAMANEST</h1>
+  <p class="sub">Colour Tamagotchi emulator for the Waveshare ESP32-S3-Touch-AMOLED-2.16.</p>
+
+  <div class="install">
+    <esp-web-install-button manifest="manifest.json?b=20261123192925">
+      <button slot="activate">INSTALL / UPDATE</button>
+      <span slot="unsupported">This browser cannot install firmware. Please use <b>Chrome</b> or <b>Edge</b> on a computer, or <b>Chrome</b> on an Android phone or tablet.</span>
+      <span slot="not-allowed">Installing needs a secure page (https).</span>
+    </esp-web-install-button>
+    <p class="usbmode">Using a phone or tablet and your device is not in the list? <a href="?usb">Try alternate USB mode</a>.</p>
+  </div>
+
+  <div class="band">HOW TO INSTALL</div>
+  <div class="box">
+    <ol>
+      <li>Connect your device to this computer, or to an Android phone or tablet, with a USB-C data cable (or a USB-C adapter).</li>
+      <li>Press <b>INSTALL / UPDATE</b> and choose your device from the list (it will show as "USB JTAG/serial debug unit"; other kinds of device are not listed).</li>
+      <li>First install: select <b>erase</b>.</li>
+      <li>Updating later: do NOT select erase - your settings, saves, and your ROMs will not be erased.</li>
+      <li>Wait until it says done; your device will restart into TamaNest.</li>
+    </ol>
+    <p class="warn">If your device is not in the list, hold its BOOT key (left key when the buttons are on top) while plugging it in, then try again.</p>
+  </div>
+
+  <div class="band">YOUR ROMS</div>
+  <div class="box">
+    <p>TamaNest does not include any game ROMs. Dump the ROMs of toys you own and copy your <code>.bin</code> files to
+    the SD card's <code>roms</code> folder (TamaNest's <b>USB DRIVE</b> mode can be used to mount the SD on your computer).
+    Use an 8-32 GB card formatted as FAT32, larger and fancier cards may reduce battery life. Smaller and simpler is best.</p>
+  </div>
+
+  <div class="band">UPDATES WITHOUT THIS PAGE</div>
+  <div class="box">
+    <p>On your device: <b>SETTINGS &gt; UPDATE &gt; CHECK ONLINE</b> downloads and installs a new version over Wi-Fi
+    (choose your network on the device; the password is typed on the touch screen).</p>
+    <p>Without Wi-Fi: copy <code>tamanest.bin</code> from the <a href="https://github.com/WavieGotchi/TamaNest/releases">latest release</a> to the SD card's <code>update</code> folder, then
+    choose <b>SETTINGS &gt; UPDATE &gt; SD CARD</b>.</p>
+  </div>
+
+  <footer>
+    <p class="by">TAMANEST BY <a href="https://github.com/WavieGotchi">WAVIEGOTCHI</a></p>
+    <p>Free software (GPL-3.0) &middot; <a href="https://github.com/WavieGotchi/TamaNest">Source code</a></p>
+    <p>Emulator core based on TamaEmu by maragotchi and Paramix Studio by mameise.</p>
+    <p>Not affiliated with or endorsed by Bandai. Tamagotchi is a trademark of Bandai.</p>
+  </footer>
+</main>
+</body>
+</html>

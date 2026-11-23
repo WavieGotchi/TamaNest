@@ -1,0 +1,10 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# 2026-11-22: two app slots for updates (ota_0 where the single app used to be, so existing installs keep running),
+# otadata, then the shared ROM store (rom_cache, ~11.9 MB = 190 blocks of 64 KB; it clears its index itself when
+# this layout changes and copies ROMs from the SD card again). nvs stays at 0x9000 (settings survive).
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+ota_0,    app,  ota_0,   0x10000,  0x200000,
+ota_1,    app,  ota_1,   0x210000, 0x200000,
+otadata,  data, ota,     0x410000, 0x2000,
+rom_cache,data, 0x40,    0x420000, 0xBE0000,
