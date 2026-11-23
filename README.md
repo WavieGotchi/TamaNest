@@ -91,7 +91,7 @@ you prefer the buttons at the bottom).
 | **DLC** | Put download files (items, food, games, destinations - also community patches, which arrive as destinations) in the game's folder in `dlc/`, then quick menu > DLC > ADD FROM SD. Works for iD, iD L, P's, 4U and 4U+. |
 | **Date and time** | Set it by hand, or once from the internet with your time zone. It is never changed automatically. |
 | **USB DRIVE** | The SD card appears on your computer (Mac, Windows, Linux, Android with USB-OTG), no card reader needed. It can also show a card TamaNest cannot read (e.g. exFAT) so you can reformat it as FAT32. |
-| **Battery friendly** | The device sleeps while the ROM sleeps (about 0.7 % per hour); the TamaNest menus sleep after 3 minutes of inactivity. |
+| **Battery friendly** | The device sleeps while the ROM sleeps (about 0.7 % per hour); the TamaNest menus sleep after 1 minute of inactivity. |
 | **Updates** | SETTINGS > UPDATE > **CHECK ONLINE** over Wi-Fi (pick your network and type the password on the touch screen, or put `ssid=` / `password=` lines in `wifi.txt` on the SD card - TamaNest saves them and removes the password from the file so that your network information is never left exposed); or copy `tamanest.bin` to `update/` and choose SETTINGS > UPDATE > SD CARD; or use the installer page. Wi-Fi is only on while checking or downloading. |
 | **Safe updates** | Updates must be signed by TamaNest, so a changed or unofficial file is refused. A new version that fails to start falls back to the previous one automatically. |
 

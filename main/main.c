@@ -1599,7 +1599,7 @@ static void key_irq(bool on)
 /* MENU SLEEP (2026-11-22): in the launcher menus (no game running) the screen switches off after
  * MENU_SLEEP_S without a key, and the chip light-sleeps like when a pet sleeps. Any key wakes it; that
  * press only wakes (it is not passed on to the menu). Done inside keys_poll, which every menu calls. */
-#define MENU_SLEEP_S 180
+#define MENU_SLEEP_S 60                         /* owner 2026-11-23: was 180 */
 static void audio_power(bool on);
 static void menu_sleep(void)
 {
@@ -1610,14 +1610,21 @@ static void menu_sleep(void)
     pm_hold(s_pm_ui, false);
     panel_sleep();
     audio_power(false);
+    int base[3];                                   /* wake on a CHANGE from the levels now (a key that reads as */
+    for (int k = 0; k < 3; k++) {                  /* held must not wake it straight away) */
+        base[k] = gpio_get_level(s_key_gpio[k]);
+        gpio_wakeup_enable(s_key_gpio[k], base[k] ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
+    }
     while (1) {                                    /* wait for any key (GPIO interrupt wakes the task) */
         key_irq(true);
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
         bool any = false;
-        for (int k = 0; k < 3; k++) if (gpio_get_level(s_key_gpio[k]) != s_key_idle[k]) any = true;
+        for (int k = 0; k < 3; k++) if (gpio_get_level(s_key_gpio[k]) != base[k]) any = true;
         if (any) break;
     }
     key_irq(false);
+    for (int k = 0; k < 3; k++)                    /* back to waking on a press */
+        gpio_wakeup_enable(s_key_gpio[k], s_key_idle[k] ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
     if (ui_held) pm_hold(s_pm_ui, true);
     panel_wake_begin();
     low_power(false);
@@ -1632,21 +1639,25 @@ static void menu_sleep(void)
  * reads in a row (debounce). Returns the keys that went down since last time. */
 static uint8_t keys_poll(void)
 {
+    static uint8_t raw_prev;                       /* the previous raw reading (debounce) */
     if (!s_emu_running && !s_usb_drive) {          /* menu sleep */
         static int64_t last_key;
-        int64_t now = esp_timer_get_time();
-        if (s_keys || !last_key || s_ui_poke > last_key) last_key = now;
+        static uint8_t seen;                       /* only a CHANGE of the keys counts as activity, so a key that */
+        int64_t now = esp_timer_get_time();        /* reads as held for any reason cannot keep the menu awake */
+        if (s_keys != seen || !last_key || s_ui_poke > last_key) { seen = s_keys; last_key = now; }
         else if (now - last_key > MENU_SLEEP_S * 1000000LL) {
             menu_sleep();
             uint8_t raw = 0;                       /* the waking key: held keys count as already down */
             for (int k = 0; k < 3; k++) if (gpio_get_level(s_key_gpio[k]) != s_key_idle[k]) raw |= (uint8_t)(1 << k);
             if (s_flip) raw = (uint8_t)((raw & 2) | ((raw & 1) << 2) | ((raw & 4) >> 2));
-            s_keys = s_keys_prev = raw | 7;        /* every key must be released before it counts again */
+            /* the keys held right now count as already down, so the waking press does nothing in the menu. (Was
+             * raw | 7 = all three "held": a key's mark only cleared when that key was pressed again, so after the
+             * first wake an unused key stayed "held" and the menu never slept again - owner 2026-11-23.) */
+            s_keys = s_keys_prev = raw_prev = raw;
             last_key = esp_timer_get_time();
             return 0;
         }
     }
-    static uint8_t raw_prev;
     uint8_t raw = 0;
     for (int k = 0; k < 3; k++)
         if (gpio_get_level(s_key_gpio[k]) != s_key_idle[k]) raw |= (uint8_t)(1 << k);

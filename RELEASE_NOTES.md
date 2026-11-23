@@ -1,3 +1,12 @@
+# TamaNest 1.0.1
+
+- The menus now go to sleep after 1 minute without a button press (was 3 minutes).
+- Fixed: after waking from menu sleep, the menus never went to sleep again.
+
+Update from the device (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or with the installer page.
+
+---
+
 # TamaNest 1.0.0
 
 TamaNest turns the Waveshare ESP32-S3-Touch-AMOLED-2.16 into a colour Tamagotchi that plays the firmware of the toys
@@ -32,7 +41,7 @@ for still runs if an emulation core supports it, but may be slow; TamaNest says 
 - Install and update from the web page on a computer (Chrome or Edge) or an Android phone or tablet (Chrome).
 - USB DRIVE: the SD card appears on your computer, no card reader needed.
 - TamaNest Updates over Wi-Fi (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or from the web installer. A failed update rolls back.
-- Battery friendly: about 0.7 % per hour while the pet sleeps; TamaNest menus sleep after 3 minutes.
+- Battery friendly: about 0.7 % per hour while the pet sleeps; TamaNest menus sleep after 1 minute.
 
 ## Other devices
 
