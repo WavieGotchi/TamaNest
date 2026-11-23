@@ -10,7 +10,8 @@ Update from the device (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or 
 # TamaNest 1.0.0
 
 TamaNest turns the Waveshare ESP32-S3-Touch-AMOLED-2.16 into a colour Tamagotchi that plays the firmware of the toys
-you own: same timing, sounds, evolutions and clock as the real device.
+you own, aiming to be as close to the real thing as it can get. Built on TamaEmu by maragotchi and Paramix Studio by
+mameise.
 
 ## Supported Firmwares
 

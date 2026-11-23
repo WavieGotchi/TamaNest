@@ -1,8 +1,11 @@
 # <img src="docs/logo.png" width="44" height="44" align="absmiddle" alt="TamaNest logo"> TamaNest
 
-A colour Tamagotchi emulator for the **Waveshare ESP32-S3-Touch-AMOLED-2.16**.
-TamaNest runs your original toys' firmware (which you dump from toys you own)
-so the pet behaves exactly like the real device: same timing, same sounds, same evolutions.
+A colour Tamagotchi emulator for the **Waveshare ESP32-S3-Touch-AMOLED-2.16**, built on the emulators by **maragotchi**
+([TamaEmu](https://github.com/maragotchi/tamaemu)) and **mameise** ([Paramix Studio](https://github.com/mameise/Paramix-Studio)).
+
+TamaNest runs the original firmware dumped from toys you own, so your pet grows, plays and keeps time much like the
+real toy. It's not perfect yet. Some things still behave a bit differently, and they're listed on the
+[issues page](https://github.com/WavieGotchi/TamaNest/issues), where you can also report any issues you find.
 
 ## Screenshots
 
@@ -81,7 +84,7 @@ you prefer the buttons at the bottom).
 
 | Feature | What it does |
 |---|---|
-| **Feels like the real toy** | Exact timing and sounds; the date and time follow the device's clock; the pet sleeps and wakes like the toy. |
+| **Feels like the real toy** | Runs the toy's own firmware with its own sounds and evolutions; the date and time follow the device's clock; the pet sleeps and wakes like the toy. |
 | **Automatic saves** | When you leave a game and every 5 minutes. The game's own saves (purchases, items) are kept. |
 | **Custom status bars** | Hunger and happiness beside the game, in each toy's own style (hidden while the pet is out of its home). |
 | **Quick menu** | Hold C for 2 s while playing: brightness, sound, screen options (size, saturation, LCD look, display mode), extras (status bars, shell, battery, border clock, game speed), SAVE & QUIT, RESTART ROM. |
