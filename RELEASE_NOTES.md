@@ -42,7 +42,7 @@ for still runs if an emulation core supports it, but may be slow; TamaNest says 
 - Install and update from the web page on a computer (Chrome or Edge) or an Android phone or tablet (Chrome).
 - USB DRIVE: the SD card appears on your computer, no card reader needed.
 - TamaNest Updates over Wi-Fi (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or from the web installer. A failed update rolls back.
-- Battery friendly: about 0.7 % per hour while the pet sleeps; TamaNest menus sleep after 1 minute.
+- Battery friendly: about 0.7 % per hour while the pet sleeps; TamaNest menus sleep after 3 minutes.
 
 ## Other devices
 
