@@ -83,3 +83,6 @@ CONFIG_TINYUSB_MSC_BUFSIZE=4096
 # Internet time (DATE/TIME > SET FROM INTERNET): 3 servers, no random start delay
 CONFIG_LWIP_SNTP_MAX_SERVERS=3
 # CONFIG_LWIP_SNTP_STARTUP_DELAY is not set
+# Software AES for TLS (2026-11-23): the hardware AES engine needs internal DMA memory per record, which is
+# not available while Wi-Fi runs ("esp-aes: Failed to allocate memory" -> update check failed)
+# CONFIG_MBEDTLS_HARDWARE_AES is not set

@@ -5490,6 +5490,7 @@ static void update_install(const char *now, const char *file)
         while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
         return;
     }
+    remove(UPDATE_FILE);                           /* installed: the file is not needed any more (owner 2026-11-23) */
     const char *const OK[2] = { "UPDATE INSTALLED.", "RESTARTING..." };
     update_screen(OK, 2, "");
     vTaskDelay(pdMS_TO_TICKS(1200));
@@ -5871,8 +5872,12 @@ static void update_online(const char *now)
     ESP_LOGI(TAG, "Update check: %s -> %s (site has %s)", url, esp_err_to_name(e), ver[0] ? ver : "?");
     if (e != ESP_OK || !ver[0]) {
         wifi_off();
+        char sig[32];
+        snprintf(sig, sizeof sig, "(SIGNAL %d DBM). MOVE", wifi_rssi());
         const char *const F[3] = { "THE UPDATE SITE DID", "NOT ANSWER.", "PLEASE TRY AGAIN LATER." };
-        update_screen(F, 3, "C:BACK");
+        const char *const WK[3] = { "THE WI-FI SIGNAL IS WEAK", sig, "CLOSER TO THE ROUTER." };
+        const bool weak = wifi_rssi() != 0 && wifi_rssi() < -72;
+        update_screen(weak ? WK : F, 3, "C:BACK");
         while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
         return;
     }
@@ -5903,7 +5908,8 @@ static void update_online(const char *now)
     char got[48] = "";
     if (e != ESP_OK || !update_file_version(got, sizeof got) || strcmp(got, ver)) {
         ESP_LOGW(TAG, "Update download: %s, file version %s", esp_err_to_name(e), got[0] ? got : "?");
-        const char *const F[3] = { "THE DOWNLOAD FAILED.", "TAMANEST WAS NOT CHANGED.", "PLEASE TRY AGAIN." };
+        const bool weak = wifi_rssi() != 0 && wifi_rssi() < -72;
+        const char *const F[3] = { "THE DOWNLOAD FAILED.", "TAMANEST WAS NOT CHANGED.", weak ? "MOVE CLOSER TO THE ROUTER." : "PLEASE TRY AGAIN." };
         update_screen(F, 3, "C:BACK");
         while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
         return;

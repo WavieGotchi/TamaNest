@@ -8,10 +8,10 @@
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/bootloader.bin?b=20261123192925", "offset": 0 },
-        { "path": "firmware/partition-table.bin?b=20261123192925", "offset": 32768 },
-        { "path": "firmware/ota_data_initial.bin?b=20261123192925", "offset": 4259840 },
-        { "path": "firmware/tamanest.bin?b=20261123192925", "offset": 65536 }
+        { "path": "firmware/bootloader.bin?b=20261123200551", "offset": 0 },
+        { "path": "firmware/partition-table.bin?b=20261123200551", "offset": 32768 },
+        { "path": "firmware/ota_data_initial.bin?b=20261123200551", "offset": 4259840 },
+        { "path": "firmware/tamanest.bin?b=20261123200551", "offset": 65536 }
       ]
     }
   ]

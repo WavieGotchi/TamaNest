@@ -10,6 +10,7 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_netif_sntp.h"
@@ -25,6 +26,8 @@ static esp_netif_t *s_netif;
 static EventGroupHandle_t s_ev;
 static bool s_on, s_base;
 static volatile int s_reason;
+static int s_rssi;                                  /* signal of the last connection (dBm), 0 = unknown */
+int wifi_rssi(void) { return s_rssi; }
 static esp_event_handler_instance_t s_h_wifi, s_h_ip;
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -122,7 +125,12 @@ esp_err_t wifi_connect(const char *ssid, const char *pass, int timeout_ms, const
         s_reason = 0;
         esp_wifi_connect();
         EventBits_t b = xEventGroupWaitBits(s_ev, BIT_UP | BIT_FAIL, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
-        if (b & BIT_UP) { ESP_LOGI(TAG, "Connected"); return ESP_OK; }   /* no network names in the log */
+        if (b & BIT_UP) {                             /* no network names in the log */
+            wifi_ap_record_t ap;
+            s_rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+            ESP_LOGI(TAG, "Connected (signal %d dBm)", s_rssi);
+            return ESP_OK;
+        }
         if (!(b & BIT_FAIL)) { esp_wifi_disconnect(); if (why) *why = "NO ANSWER (TIMEOUT)"; return ESP_ERR_TIMEOUT; }
         int r = s_reason;
         ESP_LOGW(TAG, "Connect failed (reason %d, try %d)", r, attempt + 1);
@@ -179,7 +187,45 @@ static esp_http_client_handle_t open_url(const char *url, long *len, esp_err_t *
     return NULL;
 }
 
+static void net_log_memory(const char *what, int attempt)
+{
+    ESP_LOGI(TAG, "%s, try %d: internal RAM free %u, largest block %u", what, attempt,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+}
+static esp_err_t net_get_text_once(const char *url, char *buf, size_t max);
+static esp_err_t net_download_once(const char *url, uint8_t **mem, long *got, void (*progress)(long, long));
+static esp_err_t net_save_file(const char *path, const uint8_t *mem, long n);
+/* Weak Wi-Fi (2026-11-23, owner's test at -69..-81 dBm): a TLS handshake that stalls is reset by the server, or a
+ * download drops. Try up to 3 times, a little apart, unless the site said the file does not exist. */
+#define NET_TRIES 3
 esp_err_t net_get_text(const char *url, char *buf, size_t max)
+{
+    esp_err_t e = ESP_FAIL;
+    for (int t = 1; t <= NET_TRIES; t++) {
+        net_log_memory("Get", t);
+        e = net_get_text_once(url, buf, max);
+        if (e == ESP_OK || e == ESP_ERR_NOT_FOUND) break;
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+    return e;
+}
+esp_err_t net_download(const char *url, const char *path, void (*progress)(long done, long total))
+{
+    esp_err_t e = ESP_FAIL;
+    uint8_t *mem = NULL; long n = 0;
+    for (int t = 1; t <= NET_TRIES; t++) {
+        net_log_memory("Download", t);
+        e = net_download_once(url, &mem, &n, progress);
+        if (e == ESP_OK || e == ESP_ERR_NOT_FOUND) break;
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+    if (e != ESP_OK) return e;
+    wifi_off();                                       /* frees the internal RAM the SD card driver needs */
+    e = net_save_file(path, mem, n);
+    free(mem);
+    return e;
+}
+static esp_err_t net_get_text_once(const char *url, char *buf, size_t max)
 {
     long len = 0; esp_err_t err;
     esp_http_client_handle_t h = open_url(url, &len, &err);
@@ -197,36 +243,61 @@ esp_err_t net_get_text(const char *url, char *buf, size_t max)
     return err;
 }
 
-esp_err_t net_download(const char *url, const char *path, void (*progress)(long, long))
+/* Download into PSRAM (2026-11-23): while Wi-Fi and TLS run, only ~15 KB of internal RAM is left (largest block
+ * ~7.5 KB) and the SD card driver could not get its DMA buffer ("allocate_dma_buf: not enough mem"), so writing the
+ * file during the download failed. The whole file (~1.7 MB) is kept in PSRAM and written after Wi-Fi is off. */
+#define NET_MAX_FILE (4 * 1024 * 1024)
+static esp_err_t net_download_once(const char *url, uint8_t **mem, long *got, void (*progress)(long, long))
 {
     long len = 0; esp_err_t err;
+    *got = 0;
     esp_http_client_handle_t h = open_url(url, &len, &err);
     if (!h) { ESP_LOGW(TAG, "Download %s: %s", url, esp_err_to_name(err)); return err; }
-    char tmp[128];
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    FILE *f = fopen(tmp, "wb");
-    char *buf = malloc(4096);
+    long cap = len > 0 ? len : 2 * 1024 * 1024;
+    if (cap > NET_MAX_FILE) err = ESP_ERR_INVALID_SIZE;
+    uint8_t *buf = err == ESP_OK ? heap_caps_malloc((size_t)cap, MALLOC_CAP_SPIRAM) : NULL;
+    if (err == ESP_OK && !buf) err = ESP_ERR_NO_MEM;
     long done = 0;
-    if (!f || !buf) err = ESP_FAIL;
     while (err == ESP_OK) {
-        int r = esp_http_client_read(h, buf, 4096);
+        if (done == cap) {                           /* size not announced: grow */
+            if (cap >= NET_MAX_FILE) { err = ESP_ERR_INVALID_SIZE; break; }
+            long nc = cap * 2 > NET_MAX_FILE ? NET_MAX_FILE : cap * 2;
+            uint8_t *nb = heap_caps_realloc(buf, (size_t)nc, MALLOC_CAP_SPIRAM);
+            if (!nb) { err = ESP_ERR_NO_MEM; break; }
+            buf = nb; cap = nc;
+        }
+        long want = cap - done < 4096 ? cap - done : 4096;
+        int r = esp_http_client_read(h, (char *)buf + done, (int)want);
         if (r < 0) { err = ESP_FAIL; break; }
         if (r == 0) {
             if (!esp_http_client_is_complete_data_received(h)) err = ESP_FAIL;   /* connection dropped */
             break;
         }
-        if (fwrite(buf, 1, (size_t)r, f) != (size_t)r) { err = ESP_FAIL; break; }
         done += r;
         if (progress) progress(done, len);
     }
-    free(buf);
-    if (f && fclose(f) != 0) err = ESP_FAIL;
     if (err == ESP_OK && len && done != len) err = ESP_FAIL;
-    if (err == ESP_OK) { remove(path); if (rename(tmp, path) != 0) err = ESP_FAIL; }
-    else remove(tmp);
-    ESP_LOGI(TAG, "Download %s -> %s: %ld bytes, %s", url, path, done, esp_err_to_name(err));
+    ESP_LOGI(TAG, "Download %s: %ld bytes into memory, %s", url, done, esp_err_to_name(err));
     esp_http_client_close(h);
     esp_http_client_cleanup(h);
+    if (err != ESP_OK) { free(buf); return err; }
+    *mem = buf; *got = done;
+    return ESP_OK;
+}
+static esp_err_t net_save_file(const char *path, const uint8_t *mem, long n)   /* Wi-Fi is off by now */
+{
+    char tmp[128];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE *f = fopen(tmp, "wb");
+    esp_err_t err = f ? ESP_OK : ESP_FAIL;
+    for (long o = 0; err == ESP_OK && o < n; o += 4096) {
+        size_t c = n - o < 4096 ? (size_t)(n - o) : 4096;
+        if (fwrite(mem + o, 1, c, f) != c) err = ESP_FAIL;
+    }
+    if (f && fclose(f) != 0) err = ESP_FAIL;
+    if (err == ESP_OK) { remove(path); if (rename(tmp, path) != 0) err = ESP_FAIL; }
+    else remove(tmp);
+    ESP_LOGI(TAG, "Saved %s: %ld bytes, %s", path, n, esp_err_to_name(err));
     return err;
 }
 
