@@ -1,4 +1,4 @@
-# TamaNest
+# <img src="docs/logo.png" width="44" height="44" align="absmiddle" alt="TamaNest logo"> TamaNest
 
 A colour Tamagotchi emulator for the **Waveshare ESP32-S3-Touch-AMOLED-2.16**.
 TamaNest runs your original toys' firmware (which you dump from toys you own)
