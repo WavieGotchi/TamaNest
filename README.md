@@ -57,7 +57,8 @@ Later updates: do NOT select erase — settings, saves, and your ROMs will not b
 
 ```
 roms/          your ROMs (.bin)
-saves/         TamaNest saves (one per game, plus safety copies)
+saves/         TamaNest saves (one per game, plus safety copies;
+               saves/backups/ keeps each game's save from the start of the last 7 days)
 dlc/           DLC files, one folder per game: ID, IDL, PS, 4U, 4UPLUS
 exports/       exported saves (quick menu > EXPORT SAVE)
 screenshots/   screenshots (quick menu > SCREENSHOT IN 3S)
@@ -89,7 +90,7 @@ you prefer the buttons at the bottom).
 | Feature | What it does |
 |---|---|
 | **Feels like the real toy** | Runs the toy's own firmware with its own sounds and evolutions; the date and time follow the device's clock; the pet sleeps and wakes like the toy. |
-| **Automatic saves** | When you leave a game and every 5 minutes. The game's own saves (purchases, items) are kept. |
+| **Automatic saves** | When you leave a game and every 5 minutes, plus a daily backup of each game's save (last 7 days). The game's own saves (purchases, items) are kept. |
 | **Custom status bars** | Hunger and happiness beside the game, in each toy's own style (hidden while the pet is out of its home). |
 | **Quick menu** | Hold C for 2 s while playing: brightness, sound, screen options (size, saturation, LCD look, display mode), extras (status bars, shell, battery, border clock, game speed), SAVE & QUIT, RESTART ROM. |
 | **EZTOOLS** | EZGOTCHI: edit Gotchi Points. EZCARE: fill hunger and happiness, cure sickness. |
@@ -111,7 +112,9 @@ TamaNest cannot permanently damage your device: the ESP32-S3's built-in installe
 - **Will not start / reinstall:** hold the **BOOT key** (left key when the buttons are on top) while plugging the device into a computer (or Android
   phone/tablet), open the installer page in Chrome (or Edge) and press INSTALL. Reinstalling does not touch the SD card (settings, saves, ROMs).
 - **A game crashed:** TamaNest does not save a ROM that stopped working; your last good save is kept (and the copy
-  from before each session is in `saves/` as `.sav.prev`).
+  from before each session is in `saves/` as `.sav.prev`). Older copies, one per day for the last 7 days, are in
+  `saves/backups/`: copy one into `saves/` and rename it to `<game>.sav` to go back to it. If a game misbehaves,
+  quick menu > RESTART ROM restarts it from the game's own last save, like the toy's reset button.
 
 ## Credits and licence
 

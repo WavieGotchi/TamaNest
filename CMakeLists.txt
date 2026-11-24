@@ -2,7 +2,7 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.5)
 
-set(PROJECT_VER "1.0.2")   # TamaNest version (shown in SETTINGS > UPDATE; updates compare it)
+set(PROJECT_VER "1.0.3")   # TamaNest version (shown in SETTINGS > UPDATE; updates compare it)
 # Test builds without editing this file: idf.py -B build-dev -DTAMANEST_VER=0.9.9 ... (see RELEASE.md)
 if(DEFINED TAMANEST_VER)
     set(PROJECT_VER "${TAMANEST_VER}")

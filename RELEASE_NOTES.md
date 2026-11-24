@@ -1,3 +1,16 @@
+# TamaNest 1.0.3
+
+- Fixed: Tamagotchi 4U could get stuck in the evening - a green block where the pet should be, a long tone, and
+  the game no longer responding. TamaNest's sped-up drawing for the 4U's evening colour tint had a mistake. If this
+  happened to you, quick menu > RESTART ROM brings the game back (your pet comes from the game's own last save).
+- New: daily save backups. For each game, TamaNest keeps the save from the start of each day in
+  `saves/backups/` (the last 7 days). To go back to one, copy it over the game's file in `saves/` (rename it to
+  `<game>.sav`) with WI-FI TRANSFER or USB DRIVE.
+
+Update from the device (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or with the installer page.
+
+---
+
 # TamaNest 1.0.2
 
 ## New

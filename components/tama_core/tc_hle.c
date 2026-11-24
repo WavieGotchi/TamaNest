@@ -1216,7 +1216,7 @@ U8e4:
     f_wr8(e, R[13], R[6]);                       HI(0x962, 0x964);   /* ld.b [r13],r6  (LCD) */
     R[5] &= 0xFFu;                               HI(0x964, 0x966);   /* ld.ub r5,r5 */
     f_wr8(e, R[13], R[5]);                       HI(0x966, 0x968);   /* ld.b [r13],r5  (LCD) */
-    left -= 1; R[4] = R[11]; left -= 1; pc = 0x984;                  /* jp.d 0x984 ; ld.w r4,r11 */
+    left -= 1; R[4] = R[11]; left -= 1; pc = 0x984 + B;              /* jp.d 0x984 ; ld.w r4,r11 (2026-11-24: + B was missing - on the 4U a cycle-budget exit here resumed 0x10a too early: the night-tint runaway) */
     if (left <= 0) goto out;
     goto U984;
 U96c:

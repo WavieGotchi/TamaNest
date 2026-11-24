@@ -2657,6 +2657,8 @@ static void snap_restore(Emu *e, const uint8_t *snap)
     memcpy(gram, snap + sizeof(Emu) + SAVE_POOL_BYTES, SAVE_GRAM_BYTES);
 }
 
+#define SAVE_BACKUP_DAYS 7                         /* daily save backups kept per game (save_daily_backup) */
+#define SAVE_BACKUP_DIR "/sdcard/saves/backups"
 static void save_path(char *out, size_t n, const char *romfile, const char *ext)
 {
     snprintf(out, n, "/sdcard/saves/%s", romfile);   /* saves live in their own folder (2026-11-22) */
@@ -2670,7 +2672,7 @@ static void save_path(char *out, size_t n, const char *romfile, const char *ext)
 static void sd_organise(void)
 {
     /* every folder a player uses exists from the first start (owner 2026-11-23); logs/ only in developer builds */
-    mkdir("/sdcard/roms", 0777); mkdir("/sdcard/saves", 0777); mkdir("/sdcard/update", 0777); mkdir("/sdcard/dlc", 0777);
+    mkdir("/sdcard/roms", 0777); mkdir("/sdcard/saves", 0777); mkdir(SAVE_BACKUP_DIR, 0777); mkdir("/sdcard/update", 0777); mkdir("/sdcard/dlc", 0777);
     mkdir("/sdcard/exports", 0777); mkdir("/sdcard/screenshots", 0777);
 #if TL_DEVLOG
     mkdir("/sdcard/logs", 0777);
@@ -2703,6 +2705,58 @@ static void sd_organise(void)
 
 static uint32_t s_lost0;                           /* flash writes lost when the game started (from its save) */
 static bool s_game_broken;                         /* the game crashed or lost flash writes: saving stops */
+/* DAILY SAVE BACKUPS (owner 2026-11-24: a 4U game ran wild while asleep, the 5-minute autosave stored that state and
+ * the next load replaced <rom>.sav.prev with it - no good copy was left). At the first save of each day the current
+ * save is MOVED (not copied: instant) to saves/backups/<game>_<YYYY-MM-DD>.sav = the save as it was at the start of
+ * that day; the newest SAVE_BACKUP_DAYS are kept per game. To restore one: copy it over saves/<game>.sav (Wi-Fi
+ * transfer or USB drive). The ESP32 clock holds local time "as UTC" (see sys_time_from_rtc). */
+static bool backup_name_of(const char *name, const char *base)   /* "<base>_YYYY-MM-DD.sav" exactly */
+{
+    size_t bl = strlen(base);
+    if (strlen(name) != bl + 15 || strncmp(name, base, bl) || name[bl] != '_' || strcmp(name + bl + 11, ".sav")) return false;
+    for (int i = 0; i < 10; i++) {
+        char c = name[bl + 1 + i];
+        if (i == 4 || i == 7 ? c != '-' : (c < '0' || c > '9')) return false;
+    }
+    return true;
+}
+static void save_daily_backup(const char *romfile, const char *path)
+{
+    time_t now = time(NULL);
+    struct tm t;
+    gmtime_r(&now, &t);
+    if (t.tm_year + 1900 < 2024) return;             /* clock not set: no dates to go by */
+    struct stat st;
+    if (stat(path, &st) != 0) return;                 /* no save yet */
+    char base[96];
+    snprintf(base, sizeof base, "%s", romfile);
+    char *dot = strrchr(base, '.');
+    if (dot) *dot = 0;
+    char bk[200];
+    snprintf(bk, sizeof bk, SAVE_BACKUP_DIR "/%s_%04d-%02d-%02d.sav", base, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
+    if (stat(bk, &st) == 0) return;                   /* today's backup is there already */
+    mkdir(SAVE_BACKUP_DIR, 0777);
+    if (rename(path, bk) != 0) { ESP_LOGW(TAG, "Daily backup: could not move %s", path); return; }
+    ESP_LOGI(TAG, "Daily backup: %s", bk);
+    /* keep the newest SAVE_BACKUP_DAYS of this game (names sort by date) */
+    static char names[24][120];
+    int n = 0;
+    DIR *d = opendir(SAVE_BACKUP_DIR);
+    if (!d) return;
+    struct dirent *e;
+    while ((e = readdir(d)) && n < 24)
+        if (backup_name_of(e->d_name, base)) snprintf(names[n++], sizeof names[0], "%s", e->d_name);
+    closedir(d);
+    while (n > SAVE_BACKUP_DAYS) {
+        int old = 0;
+        for (int i = 1; i < n; i++) if (strcmp(names[i], names[old]) < 0) old = i;
+        snprintf(bk, sizeof bk, SAVE_BACKUP_DIR "/%s", names[old]);
+        unlink(bk);
+        ESP_LOGI(TAG, "Daily backup: removed the oldest, %s", names[old]);
+        snprintf(names[old], sizeof names[0], "%s", names[--n]);
+    }
+}
+
 static bool save_write_snap(const char *romfile)
 {
     if (s_emu && (s_emu->stopped || s_emu->flash_lost_writes != s_lost0)) {   /* (2026-11-23: the 4U patch crash got saved) */
@@ -2725,6 +2779,7 @@ static bool save_write_snap(const char *romfile)
     }
     ok = (fclose(f) == 0) && ok;
     if (!ok) { ESP_LOGE(TAG, "Save: write failed"); unlink(tmp); return false; }
+    save_daily_backup(romfile, path);                 /* first save of the day: the old one becomes a backup */
     unlink(path);
     if (rename(tmp, path) != 0) { ESP_LOGE(TAG, "Save: rename failed"); return false; }
     ESP_LOGI(TAG, "Saved progress to %s", path);
@@ -3042,7 +3097,9 @@ static void emu_task(void *arg)
             {   /* freeze diagnosis: guest busy-waiting (idle skip ~100%) with no screen writes */
                 static int stuck_dumps;
                 double idle = (double)tc_prof.idle_cyc / (double)((s_emu->cycles - st_c0) ? (s_emu->cycles - st_c0) : 1);
-                if (idle > 0.99 && !s_pr_n && stuck_dumps < 3) {
+                /* developer builds also when the game never rests (owner 2026-11-24: 4U ran wild - garbage on the
+                 * screen, a stuck tone, ESP 98% busy, idle 0%) */
+                if (((idle > 0.99 && !s_pr_n) || (TL_DEVLOG && idle < 0.001)) && stuck_dumps < 3) {
                     stuck_dumps++;
                     ESP_LOGW(TAG, "STUCK? pc %08lx sp %08lx psr %08lx | flash state %d busy %d lost %lu | halted %d",
                              (unsigned long)s_emu->pc, (unsigned long)s_emu->sp, (unsigned long)s_emu->psr_rest,
