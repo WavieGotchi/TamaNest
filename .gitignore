@@ -20,3 +20,5 @@ sdkconfig.old
 *.pem
 *.key
 build-dev/
+build-test/
+build-trace/

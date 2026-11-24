@@ -6111,6 +6111,10 @@ static void update_online(const char *now)
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
+    /* The https connection needs bigger blocks of internal memory than are left with Wi-Fi on (2026-11-24: "the
+     * update site did not answer", mbedtls -0x008D = out of memory, largest free block 5 KB): lend the emulator's
+     * memory, as for phone setup / Wi-Fi transfer - only now, after connecting (see xfer_run). */
+    emu_lend();
     const char *const K[1] = { "CHECKING FOR UPDATES..." };
     update_screen(K, 1, "");
     char url[200], *txt = heap_caps_malloc(2048, MALLOC_CAP_SPIRAM);
