@@ -1,8 +1,13 @@
 idf_component_register(
-    SRCS "main.c" "rtc_pcf85063.c" "battery_axp2101.c" "wifi_update.c" "dlc.c"
+    SRCS "main.c" "rtc_pcf85063.c" "battery_axp2101.c" "wifi_update.c" "file_server.c" "font_p2_woff2.c" "dlc.c"
     INCLUDE_DIRS "."
-    REQUIRES tama_core fatfs esp_timer esp_partition nvs_flash esp_driver_gpio perfmon esp_pm esp_driver_usb_serial_jtag app_update esp_wifi esp_netif esp_event esp_http_client mbedtls
+    REQUIRES tama_core fatfs esp_timer esp_partition nvs_flash esp_driver_gpio perfmon esp_pm esp_driver_usb_serial_jtag app_update esp_wifi esp_netif esp_event esp_http_client mbedtls esp_http_server dns_server
 )
+
+# Developer build (battery diary, flash-save records, traces) without editing main.c: idf.py -DTAMANEST_DEV=1 ...
+if(TAMANEST_DEV)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE TL_DEVLOG=1)
+endif()
 
 idf_component_get_property(LVGL_LIB lvgl__lvgl COMPONENT_LIB)
 target_compile_options(

@@ -1,6 +1,6 @@
 {
   "name": "TamaNest",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "home_assistant_domain": "",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 0,
@@ -8,10 +8,10 @@
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/bootloader.bin?b=20261123211853", "offset": 0 },
-        { "path": "firmware/partition-table.bin?b=20261123211853", "offset": 32768 },
-        { "path": "firmware/ota_data_initial.bin?b=20261123211853", "offset": 4259840 },
-        { "path": "firmware/tamanest.bin?b=20261123211853", "offset": 65536 }
+        { "path": "firmware/bootloader.bin?b=20261124202528", "offset": 0 },
+        { "path": "firmware/partition-table.bin?b=20261124202528", "offset": 32768 },
+        { "path": "firmware/ota_data_initial.bin?b=20261124202528", "offset": 4259840 },
+        { "path": "firmware/tamanest.bin?b=20261124202528", "offset": 65536 }
       ]
     }
   ]

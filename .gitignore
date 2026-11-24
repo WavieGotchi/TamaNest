@@ -19,3 +19,4 @@ sdkconfig.old
 # Signing keys
 *.pem
 *.key
+build-dev/

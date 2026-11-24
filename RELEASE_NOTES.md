@@ -1,3 +1,28 @@
+# TamaNest 1.0.2
+
+## New
+
+- **Wi-Fi transfer** (main menu > FILE TRANSFER > WI-FI TRANSFER): manage the SD card from any web browser on the same
+  Wi-Fi - phone, tablet or computer, no app needed. Scan the QR code on TamaNest's screen (or type the address and
+  code it shows), then upload ROMs, saves and DLC, download saves, exports and screenshots, make folders and delete
+  files. The access code is new every time, and the page only works while that screen is open.
+- **Set up Wi-Fi with your phone** (SETTINGS > UPDATE > WI-FI > SET UP WITH A PHONE): TamaNest opens its own small
+  Wi-Fi network. Scan the QR code to join it, and a setup page opens where you choose your network and type the
+  password on your phone, with a "show password" option.
+- **Better keyboard** for typing on TamaNest's screen: SHIFT for capitals, number and symbol keys on the bottom row,
+  and an eye key that shows the password so you can check for typos.
+- **FILE TRANSFER** in the main menu groups USB DRIVE and WI-FI TRANSFER.
+
+## Fixes
+
+- Long Wi-Fi network names now wrap onto two lines instead of running off the screen.
+- File names with accents or Japanese characters now work on the SD card.
+- The connecting and Wi-Fi setup screens show the right title (WI-FI TRANSFER, DATE/TIME or UPDATE).
+
+Update from the device (SETTINGS > UPDATE > CHECK ONLINE), from the SD card, or with the installer page.
+
+---
+
 # TamaNest 1.0.1
 
 - The menus now go to sleep after 1 minute without a button press (was 3 minutes).

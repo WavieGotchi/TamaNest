@@ -65,8 +65,12 @@ update/        put tamanest.bin here to update without a computer
 ```
 
 TamaNest creates these folders the first time it starts with the card. An optional `wifi.txt` can sit next to them
-(see Updates below). **USB DRIVE** (main menu) shows the card on your computer (Mac, Windows, Linux,
-Android with USB-OTG) so you can copy files without a card reader. Eject the drive, then press C.
+(see Updates below). You can copy files without a card reader from **FILE TRANSFER** in the main menu:
+
+- **WI-FI TRANSFER**: open the card in any web browser on the same Wi-Fi (phone, tablet or computer). Scan the QR
+  code on TamaNest's screen, or type the address and code it shows.
+- **USB DRIVE**: the card shows up as a drive on your computer (Mac, Windows, Linux, Android with USB-OTG). Eject the
+  drive, then press C.
 
 ## Controls
 
@@ -93,9 +97,10 @@ you prefer the buttons at the bottom).
 | **Screenshots** | Quick menu > SCREENSHOT IN 3S: a 3-second countdown, then the game screen is saved to `screenshots/`. |
 | **DLC** | Put download files (items, food, games, destinations - also community patches, which arrive as destinations) in the game's folder in `dlc/`, then quick menu > DLC > ADD FROM SD. Works for iD, iD L, P's, 4U and 4U+. |
 | **Date and time** | Set it by hand, or once from the internet with your time zone. It is never changed automatically. |
-| **USB DRIVE** | The SD card appears on your computer (Mac, Windows, Linux, Android with USB-OTG), no card reader needed. It can also show a card TamaNest cannot read (e.g. exFAT) so you can reformat it as FAT32. |
+| **Wi-Fi transfer** | FILE TRANSFER > WI-FI TRANSFER: upload, download and delete files on the SD card from any web browser on the same Wi-Fi, no app needed. A new access code every time; it only runs while the screen is open. |
+| **USB DRIVE** | FILE TRANSFER > USB DRIVE: the SD card appears on your computer (Mac, Windows, Linux, Android with USB-OTG), no card reader needed. It can also show a card TamaNest cannot read (e.g. exFAT) so you can reformat it as FAT32. |
 | **Battery friendly** | The device sleeps while the ROM sleeps (about 0.7 % per hour); the TamaNest menus sleep after 1 minute of inactivity. |
-| **Updates** | SETTINGS > UPDATE > **CHECK ONLINE** over Wi-Fi (pick your network and type the password on the touch screen, or put `ssid=` / `password=` lines in `wifi.txt` on the SD card - TamaNest saves them and removes the password from the file so that your network information is never left exposed); or copy `tamanest.bin` to `update/` and choose SETTINGS > UPDATE > SD CARD; or use the installer page. Wi-Fi is only on while checking or downloading. |
+| **Updates** | SETTINGS > UPDATE > **CHECK ONLINE** over Wi-Fi (pick your network and type the password on the touch screen, set it up from your phone with SET UP WITH A PHONE, or put `ssid=` / `password=` lines in `wifi.txt` on the SD card - TamaNest saves them and removes the password from the file so that your network information is never left exposed); or copy `tamanest.bin` to `update/` and choose SETTINGS > UPDATE > SD CARD; or use the installer page. Wi-Fi is only on while checking or downloading. |
 | **Safe updates** | Updates must be signed by TamaNest, so a changed or unofficial file is refused. A new version that fails to start falls back to the previous one automatically. |
 
 ## If something goes wrong

@@ -42,10 +42,13 @@
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 #include "wifi_update.h"
+#include "file_server.h"
+#include "esp_random.h"
 #include "psa/crypto.h"
 #include "update_key.h"
 #include "dlc.h"
 #include "about_qr.h"
+#include "libs/qrcode/qrcodegen.h"            /* LVGL's copy of Nayuki's QR code generator (MIT) */
 #include "tinyusb.h"
 #include "tusb.h"                                  /* tud_mounted(): USB DRIVE connected */
 #include "tinyusb_default_config.h"
@@ -89,7 +92,9 @@ static const char *TAG = "TamaNest";
 /* Print the game RAM over USB when a save is loaded (finding where a game keeps its date). */
 #define TL_DIAG 0      /* 1 = extra 3 s log lines: screen updates, game drawing, game clock */
 #define TL_RAMDUMP 0   /* 1 = print RAM when a save loads, 2 = also run the midnight test, 3 = RAM snapshot when the quick menu opens (SNAPSHOT items) */
+#ifndef TL_DEVLOG               /* developer builds: idf.py -DTAMANEST_DEV=1 (main/CMakeLists.txt) */
 #define TL_DEVLOG 0    /* 1 = developer logs: battery diary + power locks + games' flash saves on the SD card (printed at start-up), press traces */
+#endif
 #define PROF_REPORT_S 10
 #define BENCH_CYCLES 5000000ULL
 #define BENCH_HLE_MODE 1      /* compositor HLE during the benchmark: 0 off, 1 replace, 2 verify */
@@ -201,6 +206,11 @@ static volatile bool s_chime_req;                  /* play the Tamagotchi "selec
 #define IC_DLC      "\x83"   /* DLC: gift box */
 #define IC_ZONE     "\x84"   /* time zone: globe */
 #define IC_CAMERA   "\x85"   /* screenshot: camera */
+#define IC_KSHIFT   "\x86"   /* keyboard: shift (capital letters) */
+#define IC_KSPACE   "\x87"   /* keyboard: space */
+#define IC_KDEL     "\x88"   /* keyboard: delete */
+#define IC_KEYE     "\x89"   /* keyboard: show / hide the password */
+#define IC_XFER     "\x8a"   /* FILE TRANSFER: up and down arrows (owner 2026-11-24) */
 #define IC_LOADING  "\x80"   /* loading animation: egg over a progress bar (characters from 128 on are icons too) */
 #define VL 160                                          /* virtual LCD for menus: 160x160, scaled 3x */
 
@@ -436,7 +446,7 @@ static void vlcd_frame(int x, int y, int w, int h, uint8_t c)
 static void vlcd_text(int x, int y, const char *s, uint8_t c)
 {
     /* little icons for menu items (8x8), as control characters - see the IC_ names (2026-11-22) */
-    static const uint8_t ICONS[36][8] = {
+    static const uint8_t ICONS[41][8] = {
         { 0x18, 0x7E, 0x66, 0xC3, 0xC3, 0x66, 0x7E, 0x18 },   /* \x01 cog: ring with teeth, round hole */
         { 0x3C, 0x42, 0xBD, 0xA5, 0xBD, 0x81, 0x5A, 0x3C },   /* \x02 egg with a screen and a button */
         { 0x18, 0x42, 0x3C, 0xBD, 0xBD, 0x3C, 0x42, 0x18 },   /* \x03 brightness: sun */
@@ -473,11 +483,16 @@ static void vlcd_text(int x, int y, const char *s, uint8_t c)
         { 0x66, 0x3C, 0xFF, 0x99, 0xFF, 0x99, 0x99, 0xFF },   /* \x83 DLC: gift box with a bow */
         { 0x3C, 0x5A, 0xA5, 0xFF, 0xA5, 0x5A, 0x3C, 0x00 },   /* \x84 time zone: globe, curved meridians (G1) */
         { 0x00, 0x38, 0xFF, 0xE7, 0xDB, 0xE7, 0xFF, 0x00 },   /* \x85 screenshot: camera with a lens */
+        { 0x18, 0x3C, 0x7E, 0xFF, 0x3C, 0x3C, 0x3C, 0x00 },   /* \x86 keyboard: shift arrow */
+        { 0x00, 0x00, 0x00, 0x00, 0x81, 0x81, 0xFF, 0x00 },   /* \x87 keyboard: space */
+        { 0x10, 0x30, 0x7F, 0xFF, 0x7F, 0x30, 0x10, 0x00 },   /* \x88 keyboard: delete (left arrow) */
+        { 0x00, 0x3C, 0x42, 0x99, 0x99, 0x42, 0x3C, 0x00 },   /* \x89 keyboard: eye */
+        { 0x20, 0x74, 0x24, 0x24, 0x24, 0x24, 0x2E, 0x04 },   /* \x8a file transfer: up and down arrows */
     };
     for (; *s; s++, x += 8) {
         unsigned ch = (unsigned char)*s;
         const uint8_t *g;
-        int ic = ch >= 1 && ch < 10 ? (int)ch - 1 : ch >= 11 && ch < 13 ? (int)ch - 2 : ch >= 14 && ch < 32 ? (int)ch - 3 : ch == 127 ? 29 : ch == 128 ? 30 : ch == 129 ? 31 : ch == 130 ? 32 : ch == 131 ? 33 : ch == 132 ? 34 : ch == 133 ? 35 : -1;
+        int ic = ch >= 1 && ch < 10 ? (int)ch - 1 : ch >= 11 && ch < 13 ? (int)ch - 2 : ch >= 14 && ch < 32 ? (int)ch - 3 : ch == 127 ? 29 : ch == 128 ? 30 : ch == 129 ? 31 : ch == 130 ? 32 : ch == 131 ? 33 : ch == 132 ? 34 : ch == 133 ? 35 : ch >= 134 && ch <= 138 ? (int)ch - 98 : -1;
         if (ic >= 0 && ic < (int)(sizeof ICONS / sizeof ICONS[0])) g = ICONS[ic];
         else { if (ch < 32 || ch > 127) ch = '?'; g = font_menu[ch - 32]; }
         for (int r = 0; r < 8; r++)
@@ -5376,10 +5391,45 @@ static bool update_file_version(char *ver, size_t n)   /* version of the update 
     snprintf(ver, n, "%.31s", d->version);
     return true;
 }
+static void update_screen(const char *const *lines, int nl, const char *hint);
+/* A long name (e.g. a Wi-Fi network, up to 32 characters) on at most two small-font lines (owner 2026-11-24: names
+ * ran off the "CONNECTING TO" screen). Breaks after a space, '-' or '_' when it can; ".." if two lines are not
+ * enough. Returns the number of lines (1 or 2). */
+#define WRAP_PX 144
+static int wrap_name(const char *name, char *l1, char *l2, size_t n)
+{
+    snprintf(l1, n, "%s", name); l2[0] = 0;
+    if (vlcd_text_small(0, 0, l1, 2, true) <= WRAP_PX) return 1;
+    size_t len = strlen(name), cut = 0;
+    char t[48];
+    for (size_t i = 1; i < len && i < sizeof t; i++) {   /* longest start that fits */
+        memcpy(t, name, i); t[i] = 0;
+        if (vlcd_text_small(0, 0, t, 2, true) > WRAP_PX) break;
+        cut = i;
+    }
+    for (size_t i = cut; i > cut / 2; i--)        /* prefer a break after a separator */
+        if (name[i - 1] == ' ' || name[i - 1] == '-' || name[i - 1] == '_') { cut = i; break; }
+    snprintf(l1, n, "%.*s", (int)cut, name);
+    snprintf(l2, n, "%s", name + cut);
+    while (strlen(l2) > 3 && vlcd_text_small(0, 0, l2, 2, true) > WRAP_PX) {
+        size_t l = strlen(l2); l2[l - 3] = '.'; l2[l - 2] = '.'; l2[l - 1] = 0;
+    }
+    return 2;
+}
+static void connecting_screen(const char *ssid, void (*screen)(const char *const *, int, const char *))
+{
+    char a[48], b[48];
+    int n = wrap_name(ssid, a, b, sizeof a);
+    const char *const C[3] = { "CONNECTING TO", a, b };
+    screen(C, 1 + n, "");
+}
+/* Title of the message screens below (Wi-Fi setup, connecting, ...), which UPDATE, DATE/TIME and WI-FI TRANSFER
+ * share: each sets its own while it runs (owner 2026-11-24: WI-FI TRANSFER showed "UPDATE"). */
+static const char *s_msg_title = IC_UPDATE " UPDATE";
 static void update_screen(const char *const *lines, int nl, const char *hint)
 {
     vlcd_clear(0);
-    vlcd_title(IC_UPDATE " UPDATE");
+    vlcd_title(s_msg_title);
     vlcd_rect(6, 44, VL - 12, 14 + nl * 11, 1);
     for (int i = 0; i < nl; i++) vlcd_text_small_center(51 + i * 11, lines[i], 2);
     vlcd_text_center(134, hint, 1);
@@ -5602,9 +5652,72 @@ static void net_ui_begin(void)
     esp_lv_adapter_set_dummy_draw(s_disp, true);
     s_vlcd_direct = true;
 }
+static bool s_emu_lent;                          /* emulator memory lent to Wi-Fi (phone setup) */
+/* Wi-Fi as an access point (PHONE SETUP) or with a file server (WI-FI TRANSFER) needs more of the chip's internal
+ * memory than is free in the menus, so the emulator's 65 KB (unused while no game runs) is lent to it;
+ * net_ui_end() takes it back. portal_prepare() first makes the things the system creates once and keeps (see
+ * wifi_update.c), so they do not land inside the lent space and the 65 KB comes back in one piece. */
+#if CONFIG_HEAP_TRACING_STANDALONE
+/* Diagnostic builds only (heap tracing on): which allocations are still inside the lent 65 KB when it should come
+ * back, and who made them (resolve the addresses with addr2line on the ELF). Used to find the one-time allocations
+ * that portal_prepare() now makes in advance. */
+#include "esp_heap_trace.h"
+static uintptr_t s_lent_at;
+static heap_trace_record_t *s_trace_buf;
+#define TRACE_N 1500
+static void lent_trace_start(void)
+{
+    if (!s_trace_buf) s_trace_buf = heap_caps_calloc(TRACE_N, sizeof(heap_trace_record_t), MALLOC_CAP_SPIRAM);
+    if (!s_trace_buf || heap_trace_init_standalone(s_trace_buf, TRACE_N) != ESP_OK) return;
+    heap_trace_start(HEAP_TRACE_LEAKS);
+}
+static void lent_trace_dump(void)
+{
+    heap_trace_stop();
+    size_t n = heap_trace_get_count();
+    for (size_t i = 0; i < n; i++) {
+        heap_trace_record_t r;
+        if (heap_trace_get(i, &r) != ESP_OK) continue;
+        uintptr_t a = (uintptr_t)r.address;
+        if (!(a + r.size > s_lent_at && a < s_lent_at + sizeof(Emu))) continue;
+        char t[160]; int k = 0;
+        for (int d = 0; d < CONFIG_HEAP_TRACING_STACK_DEPTH && k < (int)sizeof t - 12; d++)
+            k += snprintf(t + k, sizeof t - k, " %p", r.alloced_by[d]);
+        ESP_LOGI(TAG, "TRACE in lent space: +%u size %u by%s", (unsigned)(a - s_lent_at), (unsigned)r.size, t);
+    }
+}
+#else
+static void lent_trace_start(void) {}
+static void lent_trace_dump(void) {}
+#endif
+static void emu_lend(void)
+{
+    portal_prepare();
+    if (!s_emu && s_emu_buf && esp_ptr_internal(s_emu_buf) && !s_emu_lent) {
+#if CONFIG_HEAP_TRACING_STANDALONE
+        s_lent_at = (uintptr_t)s_emu_buf;
+#endif
+        heap_caps_free(s_emu_buf);
+        s_emu_buf = NULL;
+        s_emu_lent = true;
+        lent_trace_start();
+    }
+}
 static void net_ui_end(void)
 {
     wifi_off();
+    if (s_emu_lent) lent_trace_dump();
+    if (s_emu_lent) {                              /* take the emulator's fast memory back in one piece */
+        s_emu_buf = heap_caps_calloc(1, sizeof(Emu), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        ESP_LOGI(TAG, "Emulator memory back from Wi-Fi: %s", s_emu_buf ? "yes" : "no (restarting)");
+        if (!s_emu_buf) {
+            const char *const R[1] = { "RESTARTING..." };
+            update_screen(R, 1, "");
+            vTaskDelay(pdMS_TO_TICKS(600));
+            esp_restart();
+        }
+        s_emu_lent = false;
+    }
     size_t big = heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     ESP_LOGI(TAG, "After Wi-Fi: internal RAM free %u, largest DMA block %u", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)big);
     if (big < 16 * 1024) {                         /* the menu screen sends 480x16-pixel bands (15360 bytes) */
@@ -5647,9 +5760,10 @@ static bool touch_point(int *vx, int *vy)          /* pressed? and where, in vir
     return true;
 }
 
-/* On-screen keyboard: 4 rows of 7 keys (20x20 virtual pixels = 60 panel pixels) on 4 pages, and a bottom row
- * PAGE / SPACE / DEL / OK. Tap a key, or: A moves the cursor (hold to repeat), B types the key under it,
- * C deletes (C with nothing typed = back). Returns false for back. */
+/* On-screen keyboard: 4 rows of 7 keys (20x20 virtual pixels = 60 panel pixels) and a bottom row of 7:
+ * SHIFT (capital letters, stays on), 123 (numbers), #+= (symbols), SPACE, DELETE, EYE (show/hide a password) and
+ * OK (owner 2026-11-24: cycling through pages was slow and a hidden password hid typos). Tap a key, or: A moves the
+ * cursor (hold to repeat), B types the key under it, C deletes (C with nothing typed = back). Returns false for back. */
 #define KB_X 10
 #define KB_Y 56                                    /* (was 50: more room for the prompt and the text field, owner 2026-11-22) */
 static const char *const KB_PAGES[4] = {
@@ -5658,13 +5772,11 @@ static const char *const KB_PAGES[4] = {
     "1234567890!@#$%^&*()_+=?/:;'",
     "\",<>[]{}|\\~`                ",
 };
-static const char *const KB_NEXT[4] = { "ABC", "123", "#+=", "abc" };
-enum { KB_PAGE = 28, KB_SPACE, KB_DEL, KB_OK, KB_N };
+enum { KB_SHIFT = 28, KB_NUM, KB_SYM, KB_SPACE, KB_DEL, KB_EYE, KB_OK, KB_N };
 static void kb_key_rect(int k, int *x, int *y, int *w, int *h)
 {
     if (k < 28) { *x = KB_X + (k % 7) * 20; *y = KB_Y + (k / 7) * 20; *w = 20; *h = 20; return; }
-    static const int X[4] = { 10, 50, 90, 120 }, W[4] = { 40, 40, 30, 30 };
-    *x = X[k - 28]; *y = KB_Y + 80; *w = W[k - 28]; *h = 16;
+    *x = KB_X + (k - 28) * 20; *y = KB_Y + 80; *w = 20; *h = 16;
 }
 static int kb_hit(int vx, int vy)
 {
@@ -5674,8 +5786,9 @@ static int kb_hit(int vx, int vy)
     }
     return -1;
 }
-static bool s_kb_secret;                           /* password: show stars except the last character typed */
-static void kb_draw(const char *title, const char *prompt, const char *text, int page, int cur, int pressed)
+static bool s_kb_secret;                           /* typing a password (the EYE key shows it) */
+static bool s_kb_show;                             /* password shown in full */
+static void kb_draw(const char *title, const char *prompt, const char *text, int mode, bool shift, int cur, int pressed)
 {
     vlcd_clear(0);
     vlcd_title(title);
@@ -5687,22 +5800,31 @@ static void kb_draw(const char *title, const char *prompt, const char *text, int
     int len = (int)strlen(text), first = len > 16 ? len - 16 : 0;
     char shown[20];
     snprintf(shown, sizeof shown, "%s_", text + first);
-    if (s_kb_secret) for (int i = 0; i < len - first - 1; i++) shown[i] = '*';   /* password: only the last character shows */
+    if (s_kb_secret && !s_kb_show)                 /* hidden: only the last character shows */
+        for (int i = 0; i < len - first - 1; i++) shown[i] = '*';
     if (!len) vlcd_text_small(10, 45, "TAP, OR A MOVE  B TYPE", 1, false);
     else vlcd_text(8, 44, shown, 2);
+    const int page = mode == 0 ? (shift ? 1 : 0) : mode;
     for (int k = 0; k < KB_N; k++) {
         int x, y, w, h; kb_key_rect(k, &x, &y, &w, &h);
-        char lab[6];
+        if (k == KB_EYE && !s_kb_secret) continue;   /* only for passwords */
+        char lab[6] = "";
+        const char *small = NULL;                    /* label in the small font */
+        bool lit = (k == KB_SHIFT && shift && mode == 0) || (k == KB_EYE && s_kb_show);
         if (k < 28) { lab[0] = KB_PAGES[page][k]; lab[1] = 0; if (lab[0] == ' ') continue; }
-        else if (k == KB_PAGE) snprintf(lab, sizeof lab, "%s", KB_NEXT[page]);
-        else if (k == KB_SPACE) snprintf(lab, sizeof lab, "SPC");
-        else if (k == KB_DEL) snprintf(lab, sizeof lab, "DEL");
+        else if (k == KB_SHIFT) snprintf(lab, sizeof lab, IC_KSHIFT);
+        else if (k == KB_NUM) small = mode == 2 ? "ABC" : "123";
+        else if (k == KB_SYM) small = mode == 3 ? "ABC" : "#+=";
+        else if (k == KB_SPACE) snprintf(lab, sizeof lab, IC_KSPACE);
+        else if (k == KB_DEL) snprintf(lab, sizeof lab, IC_KDEL);
+        else if (k == KB_EYE) snprintf(lab, sizeof lab, IC_KEYE);
         else snprintf(lab, sizeof lab, "OK");
-        bool on = k == cur, dn = k == pressed;
+        bool on = k == cur, dn = k == pressed || lit;
         if (dn) vlcd_rect(x + 1, y + 1, w - 2, h - 2, 2);
         else if (on) vlcd_rect(x + 1, y + 1, w - 2, h - 2, 3);
         vlcd_frame(x + 1, y + 1, w - 2, h - 2, on || dn ? 2 : 1);
-        vlcd_text(x + (w - (int)strlen(lab) * 8) / 2, y + (h - 8) / 2, lab, dn ? 0 : 2);
+        if (small) { int tw = vlcd_text_small(0, 0, small, 2, true); vlcd_text_small(x + (w - tw) / 2, y + (h - 5) / 2, small, dn ? 0 : 2, false); }
+        else vlcd_text(x + (w - (int)strlen(lab) * 8) / 2, y + (h - 8) / 2, lab, dn ? 0 : 2);
     }
     vlcd_clock();
     vlcd_battery();
@@ -5710,21 +5832,30 @@ static void kb_draw(const char *title, const char *prompt, const char *text, int
 }
 static bool text_entry(const char *title, const char *prompt, char *buf, size_t max)
 {
-    int page = 0, cur = 0, pressed = -1;
-    bool redraw = true;
+    int mode = 0, cur = 0, pressed = -1;           /* mode 0 letters, 2 numbers, 3 symbols */
+    bool shift = false, redraw = true;
     int64_t a_down = 0, a_rep = 0;
+    s_kb_show = false;
     touch_enable(true);
     while (1) {
-        if (redraw) { kb_draw(title, prompt, buf, page, cur, pressed); redraw = false; }
+        if (redraw) { kb_draw(title, prompt, buf, mode, shift, cur, pressed); redraw = false; }
         int k = -1;                                  /* key to type this pass */
         int vx, vy;
         bool t = touch_point(&vx, &vy);
-        if (t) { int h = kb_hit(vx, vy); if (h != pressed) { pressed = h; if (h >= 0) cur = h; redraw = true; } }
+        if (t) { int h = kb_hit(vx, vy); if (h == KB_EYE && !s_kb_secret) h = -1;
+                 if (h != pressed) { pressed = h; if (h >= 0) cur = h; redraw = true; } }
         else if (pressed >= 0) { k = pressed; pressed = -1; redraw = true; }   /* typed when the finger lifts */
         uint8_t down = keys_poll();
         int64_t now = esp_timer_get_time();
-        if (down & 1) { a_down = now; a_rep = now + 400000; cur = (cur + 1) % KB_N; redraw = true; }
-        else if ((s_keys & 1) && a_down && now >= a_rep) { a_rep = now + 90000; cur = (cur + 1) % KB_N; redraw = true; }
+        bool step = false;
+        if (down & 1) { a_down = now; a_rep = now + 400000; step = true; }
+        else if ((s_keys & 1) && a_down && now >= a_rep) { a_rep = now + 90000; step = true; }
+        if (step) {                                  /* next key (blank symbol slots and a hidden EYE are skipped) */
+            const int page = mode == 0 ? (shift ? 1 : 0) : mode;
+            do cur = (cur + 1) % KB_N;
+            while ((cur < 28 && KB_PAGES[page][cur] == ' ') || (cur == KB_EYE && !s_kb_secret));
+            redraw = true;
+        }
         if (!(s_keys & 1)) a_down = 0;
         if (down & 2) k = cur;
         if (down & 4) {
@@ -5734,14 +5865,128 @@ static bool text_entry(const char *title, const char *prompt, char *buf, size_t 
         }
         if (k >= 0) {
             size_t l = strlen(buf);
+            const int page = mode == 0 ? (shift ? 1 : 0) : mode;
             if (k < 28) { char c = KB_PAGES[page][k]; if (c != ' ' && l + 1 < max) { buf[l] = c; buf[l + 1] = 0; } }
-            else if (k == KB_PAGE) page = (page + 1) % 4;
+            else if (k == KB_SHIFT) { if (mode == 0) shift = !shift; else { mode = 0; shift = true; } }
+            else if (k == KB_NUM) mode = mode == 2 ? 0 : 2;
+            else if (k == KB_SYM) mode = mode == 3 ? 0 : 3;
             else if (k == KB_SPACE) { if (l + 1 < max) { buf[l] = ' '; buf[l + 1] = 0; } }
             else if (k == KB_DEL) { if (l) buf[l - 1] = 0; }
+            else if (k == KB_EYE) s_kb_show = !s_kb_show;
             else { touch_enable(false); return true; }
             redraw = true;
         }
         vTaskDelay(pdMS_TO_TICKS(t ? 15 : 20));
+    }
+}
+
+/* Test a network and keep it (NVS) if it works. Shows CONNECTING TO; the reason in *why if not. */
+static esp_err_t wifi_test_keep(const char *ssid, const char *pass, const char **why)
+{
+    connecting_screen(ssid, update_screen);
+    esp_err_t e = wifi_connect(ssid, pass, 15000, why);
+    wifi_off();
+    if (e != ESP_OK) return e;
+    snprintf(s_wifi_ssid, sizeof s_wifi_ssid, "%s", ssid);
+    snprintf(s_wifi_pass, sizeof s_wifi_pass, "%s", pass);
+    wifi_creds_save();
+    return ESP_OK;
+}
+static void wifi_kept_screen(void)
+{
+    const char *const OK[2] = { "CONNECTED. TAMANEST WILL", "USE THIS WI-FI." };
+    update_screen(OK, 2, "C:BACK");
+    while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+/* PHONE SETUP screen (owner 2026-11-24): a QR code that joins TamaNest's own setup network, the name and password
+ * to type instead, and what is happening. phone: 0 waiting, 1 a phone has joined. */
+#define PHONE_SETUP_MIN 10                          /* the setup network closes after this many minutes */
+static void phone_screen(const char *ap, const char *pw, const uint8_t *qr, int phone)
+{
+    vlcd_clear(0);
+    vlcd_title(IC_WIFI " PHONE SETUP");
+    int y = 38;
+    if (qr) {                                        /* 2 px per module; the light screen is the quiet zone */
+        const int n = qrcodegen_getSize(qr), sc = 2, x0 = 8, y0 = 37;
+        for (int r = 0; r < n; r++)
+            for (int c = 0; c < n; c++)
+                if (qrcodegen_getModule(qr, c, r)) vlcd_rect(x0 + c * sc, y0 + r * sc, sc, sc, 2);
+    }
+    const int x = 78;
+    vlcd_text_small(x, y, "SCAN WITH", 2, false); y += 8;
+    vlcd_text_small(x, y, "YOUR PHONE'S", 2, false); y += 8;
+    vlcd_text_small(x, y, "CAMERA, OR", 2, false); y += 8;
+    vlcd_text_small(x, y, "JOIN THE WI-FI", 2, false); y += 12;
+    vlcd_text_small(x, y, ap, 2, false); y += 12;
+    vlcd_text_small(x, y, "PASSWORD", 1, false); y += 8;
+    vlcd_text_small(x, y, pw, 2, false);
+    vlcd_rect(6, 106, VL - 12, 24, 1);
+    vlcd_text_small_center(110, phone ? "PHONE CONNECTED." : "WAITING FOR YOUR PHONE...", 2);
+    vlcd_text_small_center(120, phone ? "NO PAGE? OPEN 192.168.4.1" : "A SETUP PAGE OPENS ON IT.", 2);
+    vlcd_text_center(134, "C:CANCEL", 1);
+    vlcd_clock();
+    vlcd_battery();
+    vlcd_present();
+}
+
+/* Set up Wi-Fi from a phone: TamaNest becomes its own Wi-Fi network for a few minutes and the phone sends the
+ * home network's name and password from a web page (wifi_update.c portal_*). `aps` = the networks just scanned. */
+static void phone_setup(const wifi_ap_t *aps, int n)
+{
+    char ap[24], pw[12], q[96];
+    static uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(4)], tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(4)];
+    portal_names(ap, sizeof ap, pw, sizeof pw);       /* the device's own setup password (kept) */
+    snprintf(q, sizeof q, "WIFI:T:WPA;S:%s;P:%s;;", ap, pw);
+    const bool qok = qrcodegen_encodeText(q, tmp, qr, qrcodegen_Ecc_MEDIUM, 1, 4, qrcodegen_Mask_AUTO, true);
+    memset(q, 0, sizeof q);
+    /* Wi-Fi as an access point needs more of the chip's internal memory than is free in the menus, so the
+     * emulator's 65 KB (unused while no game runs) is lent to it; net_ui_end() takes it back (or restarts). */
+    emu_lend();
+    for (;;) {
+        const char *const S[1] = { "STARTING PHONE SETUP..." };
+        update_screen(S, 1, "");
+        if (portal_start(ap, pw, aps, n) != ESP_OK) {
+            portal_stop();
+            const char *const E[2] = { "PHONE SETUP DID NOT START.", "PLEASE TRY AGAIN." };
+            update_screen(E, 2, "C:BACK");
+            while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+            return;
+        }
+        const int64_t t0 = esp_timer_get_time();
+        int shown = -1;
+        char ssid[33], pass[65];
+        bool got = false, timeout = false;
+        for (;;) {
+            s_ui_poke = esp_timer_get_time();         /* the menus do not fall asleep while the phone is used */
+            const int ph = portal_phones() > 0;
+            if (ph != shown) { phone_screen(ap, pw, qok ? qr : NULL, ph); shown = ph; }
+            if (portal_take(ssid, sizeof ssid, pass, sizeof pass)) { got = true; break; }
+            if (keys_poll() & 4) break;
+            if (esp_timer_get_time() - t0 > PHONE_SETUP_MIN * 60LL * 1000000) { timeout = true; break; }
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (!got) {
+            portal_stop();
+            if (timeout) {
+                const char *const T[2] = { "PHONE SETUP CLOSED", "(NOTHING WAS SENT)." };
+                update_screen(T, 2, "C:BACK");
+                while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            return;
+        }
+        connecting_screen(ssid, update_screen);
+        vTaskDelay(pdMS_TO_TICKS(1500));              /* let the phone receive its "thank you" page */
+        portal_stop();
+        const char *why = NULL;
+        esp_err_t e = wifi_test_keep(ssid, pass, &why);
+        memset(pass, 0, sizeof pass);
+        if (e == ESP_OK) { wifi_kept_screen(); return; }
+        const char *const F[3] = { "COULD NOT CONNECT:", why, "TRY AGAIN FROM THE PHONE?" };
+        update_screen(F, 3, "B:YES C:BACK");
+        uint8_t d;
+        while (!((d = keys_poll()) & 6)) vTaskDelay(pdMS_TO_TICKS(10));
+        if (!(d & 2)) return;
     }
 }
 
@@ -5760,28 +6005,33 @@ static void wifi_setup(void)
         while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
         return;
     }
-    static char rows[13][24];
-    const char *items[13];
+    static char rows[14][24];
+    const char *items[15];
+    snprintf(rows[13], sizeof rows[13], "SET UP WITH A PHONE");   /* first: no typing on the device (owner 2026-11-24) */
+    items[0] = rows[13];
     for (int i = 0; i < n; i++) {
         char nm[18];
         if (strlen(aps[i].ssid) > 15) snprintf(nm, sizeof nm, "%.13s..", aps[i].ssid);   /* cut off: ".." */
         else snprintf(nm, sizeof nm, "%s", aps[i].ssid);
         int bars = aps[i].rssi > -60 ? 3 : aps[i].rssi > -72 ? 2 : 1;
         list_item(rows[i], sizeof rows[i], nm, bars == 3 ? "***" : bars == 2 ? "**" : "*");
-        items[i] = rows[i];
+        items[1 + i] = rows[i];
     }
     snprintf(rows[n], sizeof rows[n], "OTHER (TYPE NAME)");
-    items[n] = rows[n];
-    int m = n + 1;
+    items[1 + n] = rows[n];
+    int m = n + 2;
     static char forget[24];
     if (s_wifi_ssid[0]) { snprintf(forget, sizeof forget, "FORGET SAVED WI-FI"); items[m++] = forget; }
     int r = run_list(IC_WIFI " CHOOSE WI-FI", items, m, 0);
     if (r < 0) return;
+    if (r == 0) { phone_setup(aps, n); return; }
+    r--;                                             /* from here: 0..n-1 networks, n other, n+1 forget */
     if (r == n + 1) {                                /* forget: e.g. before giving the device to someone */
-        char nm[24];
-        snprintf(nm, sizeof nm, "%.20s", s_wifi_ssid);
-        const char *const Q[3] = { "FORGET THIS WI-FI AND", "ITS PASSWORD?", nm };
-        update_screen(Q, 3, "B:FORGET C:BACK");
+        char nm[48];
+        char n2[48];
+        int nl = wrap_name(s_wifi_ssid, nm, n2, sizeof nm);
+        const char *const Q[4] = { "FORGET THIS WI-FI AND", "ITS PASSWORD?", nm, n2 };
+        update_screen(Q, 2 + nl, "B:FORGET C:BACK");
         uint8_t d;
         while (!((d = keys_poll()) & 6)) vTaskDelay(pdMS_TO_TICKS(10));
         if (d & 2) {
@@ -5809,23 +6059,16 @@ static void wifi_setup(void)
         s_kb_secret = false;
         if (!typed) return;
     }
-    const char *const C[2] = { "CONNECTING TO", ssid };
-    update_screen(C, 2, "");
     const char *why = NULL;
-    esp_err_t e = wifi_connect(ssid, pass, 15000, &why);
-    wifi_off();
-    if (e != ESP_OK) {
+    if (wifi_test_keep(ssid, pass, &why) != ESP_OK) {
+        memset(pass, 0, sizeof pass);
         const char *const F[2] = { "COULD NOT CONNECT:", why };
         update_screen(F, 2, "C:BACK");
         while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
         return;
     }
-    snprintf(s_wifi_ssid, sizeof s_wifi_ssid, "%s", ssid);
-    snprintf(s_wifi_pass, sizeof s_wifi_pass, "%s", pass);
-    wifi_creds_save();
-    const char *const OK[2] = { "CONNECTED. TAMANEST WILL", "USE THIS WI-FI." };
-    update_screen(OK, 2, "C:BACK");
-    while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+    memset(pass, 0, sizeof pass);
+    wifi_kept_screen();
 }
 
 static int ver_cmp(const char *a, const char *b)   /* "1.2.10" style; >0 if a is newer */
@@ -5854,8 +6097,7 @@ static void update_online(const char *now)
         return;
     }
     if (!s_wifi_ssid[0]) { wifi_setup(); if (!s_wifi_ssid[0]) return; }
-    const char *const C[2] = { "CONNECTING TO", s_wifi_ssid };
-    update_screen(C, 2, "");
+    connecting_screen(s_wifi_ssid, update_screen);
     const char *why = NULL;
     char msg[48], ver[24] = "";
     if (wifi_connect(s_wifi_ssid, s_wifi_pass, 15000, &why) != ESP_OK) {
@@ -6032,15 +6274,21 @@ static int tz_guess(time_t utc)                    /* the zone that matches the 
     for (int i = 0; i < TZ_COUNT; i++) if (tz_offset_at(i, utc) == d) return i;
     return utc_i;
 }
+static void time_run(void);
 static void time_from_internet(void)
+{
+    s_msg_title = IC_CLOCK " DATE/TIME";
+    time_run();
+    s_msg_title = IC_UPDATE " UPDATE";
+}
+static void time_run(void)
 {
     wifi_creds_load();
     wifi_txt_import();
     net_ui_begin();
     if (!s_wifi_ssid[0]) wifi_setup();
     if (!s_wifi_ssid[0]) { net_ui_end(); return; }
-    const char *const C[2] = { "CONNECTING TO", s_wifi_ssid };
-    time_screen(C, 2, "");
+    connecting_screen(s_wifi_ssid, time_screen);
     const char *why = NULL;
     if (wifi_connect(s_wifi_ssid, s_wifi_pass, 15000, &why) != ESP_OK) {
         wifi_off();
@@ -6086,6 +6334,149 @@ static void time_from_internet(void)
     time_wait_keys(6);
     net_ui_end();
 }
+/* WI-FI TRANSFER (owner 2026-11-24): the SD card's files in a web browser on the same Wi-Fi (main/file_server.c).
+ * The screen shows a QR code of the link (with a new access code), the address and code to type instead, and what
+ * the browser is doing. C stops. */
+static void fit_small(char *t, int px)               /* shorten with ".." to fit px in the small font */
+{
+    while (strlen(t) > 3 && vlcd_text_small(0, 0, t, 2, true) > px) {
+        size_t l = strlen(t); t[l - 3] = '.'; t[l - 2] = '.'; t[l - 1] = 0;
+    }
+}
+static void xfer_screen(const char *ip, const char *code, const uint8_t *qr, const char *l1, const char *l2, const char *hint)
+{
+    vlcd_clear(0);
+    vlcd_title(IC_WIFI " WI-FI TRANSFER");
+    if (qr) {
+        const int n = qrcodegen_getSize(qr), sc = 2, x0 = 8, y0 = 37;
+        for (int r = 0; r < n; r++)
+            for (int c = 0; c < n; c++)
+                if (qrcodegen_getModule(qr, c, r)) vlcd_rect(x0 + c * sc, y0 + r * sc, sc, sc, 2);
+    }
+    const int x = 78;
+    int y = 38;
+    vlcd_text_small(x, y, "SCAN WITH", 2, false); y += 8;
+    vlcd_text_small(x, y, "YOUR PHONE,", 2, false); y += 8;
+    vlcd_text_small(x, y, "OR OPEN IN A", 2, false); y += 8;
+    vlcd_text_small(x, y, "BROWSER:", 2, false); y += 12;
+    vlcd_text_small(x, y, ip, 2, false); y += 12;
+    vlcd_text_small(x, y, "CODE", 1, false); y += 8;
+    vlcd_text_small(x, y, code, 2, false);
+    vlcd_rect(6, 106, VL - 12, 24, 1);
+    vlcd_text_small_center(110, l1, 2);
+    vlcd_text_small_center(120, l2, 2);
+    vlcd_text_center(134, hint, 1);
+    vlcd_clock();
+    vlcd_battery();
+    vlcd_present();
+}
+static void xfer_run(void);
+static void wifi_transfer_mode(void)
+{
+    if (!s_sd_ok) {
+        const char *const N[2] = { "NO SD CARD TO SHOW.", "PUT IN A FAT32 CARD FIRST." };
+        update_screen(N, 2, "C:BACK");
+        while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+        return;
+    }
+    wifi_creds_load();
+    wifi_txt_import();
+    s_msg_title = IC_WIFI " WI-FI TRANSFER";
+    xfer_run();
+    s_msg_title = IC_UPDATE " UPDATE";
+}
+static void xfer_run(void)
+{
+    net_ui_begin();
+    if (!s_wifi_ssid[0]) wifi_setup();
+    if (!s_wifi_ssid[0]) { net_ui_end(); return; }
+    connecting_screen(s_wifi_ssid, update_screen);
+    const char *why = NULL;
+    char ip[20];
+    if (wifi_connect(s_wifi_ssid, s_wifi_pass, 15000, &why) != ESP_OK || !wifi_ip(ip, sizeof ip)) {
+        wifi_off();
+        const char *const F[3] = { "COULD NOT CONNECT:", why ? why : "NO ADDRESS", "B: CHOOSE ANOTHER WI-FI" };
+        update_screen(F, 3, "B:WI-FI C:BACK");
+        uint8_t d;
+        while (!((d = keys_poll()) & 6)) vTaskDelay(pdMS_TO_TICKS(10));
+        if (d & 2) wifi_setup();
+        net_ui_end();
+        return;
+    }
+    /* Lend the emulator's memory only now: the first Wi-Fi connection after start-up makes things Wi-Fi keeps for
+     * good (radio and security locks, a semaphore for this task - found with heap tracing), and they must not land
+     * inside the lent space or it cannot come back in one piece. */
+    emu_lend();
+    char code[8], url[64];
+    snprintf(code, sizeof code, "%06lu", (unsigned long)(esp_random() % 1000000UL));
+    snprintf(url, sizeof url, "http://%s/?k=%s", ip, code);
+    static uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(4)], tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(4)];
+    const bool qok = qrcodegen_encodeText(url, tmp, qr, qrcodegen_Ecc_MEDIUM, 1, 4, qrcodegen_Mask_AUTO, true);
+    if (file_server_start(code) != ESP_OK) {
+        wifi_off();
+        const char *const E[2] = { "THE FILE SERVER DID NOT", "START. PLEASE TRY AGAIN." };
+        update_screen(E, 2, "C:BACK");
+        while (!(keys_poll() & 4)) vTaskDelay(pdMS_TO_TICKS(10));
+        net_ui_end();
+        return;
+    }
+    ESP_LOGI(TAG, "Wi-Fi transfer on");
+    char last[96] = "", l1[40], l2[56];
+    int64_t check_t = 0;
+    bool lost = false;
+    for (;;) {
+        const int64_t now = esp_timer_get_time();
+        s_ui_poke = now;                              /* no menu sleep while the transfer screen is open */
+        if (now - check_t > 2000000) {                /* still on the Wi-Fi? */
+            check_t = now;
+            char ip2[20];
+            lost = !wifi_ip(ip2, sizeof ip2);
+        }
+        fs_status_t st;
+        file_server_status(&st);
+        snprintf(l2, sizeof l2, "%s", st.name);
+        fit_small(l2, 144);
+        if (lost) { snprintf(l1, sizeof l1, "WI-FI CONNECTION LOST."); snprintf(l2, sizeof l2, "C, THEN OPEN THIS AGAIN."); }
+        else if (st.bad_codes >= 20) { snprintf(l1, sizeof l1, "LOCKED: TOO MANY WRONG"); snprintf(l2, sizeof l2, "CODES. C, THEN TRY AGAIN."); }
+        else if (st.busy && st.total > 0)
+            snprintf(l1, sizeof l1, "%s %ld%%", st.what, (long)((long long)st.done * 100 / st.total));
+        else if (st.what[0]) snprintf(l1, sizeof l1, "%s:", st.what);
+        else if (st.last_us) { snprintf(l1, sizeof l1, "BROWSER CONNECTED."); snprintf(l2, sizeof l2, "STAY ON THIS SCREEN."); }
+        else { snprintf(l1, sizeof l1, "READY. USE A DEVICE ON"); snprintf(l2, sizeof l2, "THE SAME WI-FI."); }
+        char sig[96];
+        snprintf(sig, sizeof sig, "%s|%s", l1, l2);
+        if (strcmp(sig, last)) { snprintf(last, sizeof last, "%s", sig); xfer_screen(ip, code, qok ? qr : NULL, l1, l2, "C:STOP"); }
+        if (keys_poll() & 4) {
+            if (!st.busy) break;
+            const char *const Q[2] = { "A FILE IS STILL BEING", "SENT. STOP ANYWAY?" };
+            update_screen(Q, 2, "B:STOP C:NO");
+            uint8_t d;
+            while (!((d = keys_poll()) & 6)) vTaskDelay(pdMS_TO_TICKS(10));
+            if (d & 2) break;
+            last[0] = 0;                              /* redraw */
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    file_server_stop();
+    memset(code, 0, sizeof code);
+    ESP_LOGI(TAG, "Wi-Fi transfer off");
+    net_ui_end();
+}
+
+/* FILE TRANSFER (owner 2026-11-24): the two ways to reach the SD card from another device. */
+static void file_transfer_menu(void)
+{
+    int sel = 0;
+    for (;;) {
+        const char *const items[2] = { IC_USB " USB DRIVE", IC_WIFI " WI-FI TRANSFER" };
+        int r = run_list(IC_XFER " FILE TRANSFER", items, 2, sel);
+        if (r < 0) return;
+        sel = r;
+        if (r == 0) usb_drive_mode();
+        else wifi_transfer_mode();
+    }
+}
+
 static void zone_menu(void)                        /* only remembers the zone; the clock is not touched */
 {
     uint32_t local;
@@ -6336,14 +6727,19 @@ static void ui_task(void *arg)
          * launcher's VINTAGE TMGC, DIGIMON...) can be added here later. */
         static bool off_armed;
         /* system actions under a line (owner 2026-11-22): USB DRIVE (moved from SETTINGS) and POWER OFF */
-        const char *const cats[] = { "\x02 COLOUR TMGC", "\x01 SETTINGS", IC_USB " USB DRIVE", off_armed ? IC_POWER " OFF: B AGAIN" : IC_POWER " POWER OFF", IC_ABOUT " ABOUT & CREDITS" };
+        static char sub[3][24];                        /* items that open a list: ">" at the right edge */
+        list_item(sub[0], sizeof sub[0], "\x02 COLOUR TMGC", ">");
+        list_item(sub[1], sizeof sub[1], "\x01 SETTINGS", ">");
+        list_item(sub[2], sizeof sub[2], IC_XFER " FILE TRANSFER", ">");
+        const char *const cats[] = { sub[0], sub[1], sub[2],
+                                     off_armed ? IC_POWER " OFF: B AGAIN" : IC_POWER " POWER OFF", IC_ABOUT " ABOUT & CREDITS" };
         s_list_sep = 2;
         int r = run_list_refresh(IC_HOME " TAMANEST", cats, 5, &cat_sel, 1000);
         s_list_sep = -1;
         if (r == -2) { if (cat_sel != 3) off_armed = false; continue; }
         if (r < 0) { cat_sel = 0; off_armed = false; continue; }
         cat_sel = r;
-        if (r == 2) { off_armed = false; usb_drive_mode(); continue; }
+        if (r == 2) { off_armed = false; file_transfer_menu(); continue; }   /* USB DRIVE + WI-FI TRANSFER (owner 2026-11-24) */
         if (r == 4) { off_armed = false; about_screen(); continue; }   /* ABOUT: home menu, last (owner 2026-11-23) */
         if (r == 3) {                                  /* POWER OFF (owner 2026-11-22): like holding the PWR key */
             if (!off_armed) { off_armed = true; continue; }

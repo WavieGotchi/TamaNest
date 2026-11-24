@@ -14,6 +14,7 @@ int wifi_scan(wifi_ap_t *out, int max);                    /* networks nearby, s
  * "NETWORK NOT FOUND", ...) */
 esp_err_t wifi_connect(const char *ssid, const char *pass, int timeout_ms, const char **why);
 void wifi_off(void);
+bool wifi_ip(char *buf, size_t n);                 /* "192.168.1.23" while connected */
 int wifi_rssi(void);                                     /* signal of the last connection in dBm (0 = unknown) */                                       /* disconnect, stop, free the driver */
 
 /* HTTPS GET into a buffer (text, zero-terminated). Follows redirects. */
@@ -27,3 +28,13 @@ esp_err_t net_download(const char *url, const char *path, void (*progress)(long 
  * ESP32's own clock set to UTC - the caller sets it back (TamaNest keeps it at local time for SD card file dates). */
 #include <time.h>
 esp_err_t net_get_utc(time_t *utc, int timeout_ms);
+
+/* Phone setup (soft access point + setup page). portal_names: "TAMANEST-XXXX" + a new 8-digit password.
+ * portal_start shows `nets` (from wifi_scan) on the page. portal_take: true once the phone sent a network
+ * (copies it). portal_stop switches it all off. */
+void portal_names(char *ssid, size_t ns, char *pass, size_t np);
+void portal_prepare(void);                   /* call before freeing memory for the access point */
+esp_err_t portal_start(const char *ap_ssid, const char *ap_pass, const wifi_ap_t *nets, int n);
+int portal_phones(void);
+bool portal_take(char *ssid, size_t ns, char *pass, size_t np);
+void portal_stop(void);

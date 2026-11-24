@@ -51,3 +51,14 @@ it cannot.
   with a build containing a new public key.
 - Check a file: `python web/sign_update.py --check web/firmware/tamanest.bin`.
 - Keep two-factor authentication on the GitHub account.
+
+## Test and developer builds (no source edits)
+
+Build them into their own folder so the release build in `build/` stays untouched:
+
+- Developer build (battery diary, flash-save records, press traces):
+  `idf.py -B build-dev -DTAMANEST_DEV=1 build flash`
+- Update test (a lower version number, so CHECK ONLINE offers the live release):
+  `idf.py -B build-dev -DTAMANEST_VER=0.9.9 build flash`
+
+`web/make_release.sh` always uses the normal release build in `build/`.

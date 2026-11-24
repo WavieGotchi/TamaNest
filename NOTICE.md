@@ -25,14 +25,18 @@ Parts of TamaNest are based on the work of other people. Their copyright and lic
 
 ## Fonts
 
-- **Press Start 2P** by codeman38 (Cody "CodeMan38" Boisclair), SIL Open Font License 1.1 (`main/font_menu.h`).
+- **Press Start 2P** by codeman38 (Cody "CodeMan38" Boisclair), SIL Open Font License 1.1 (`main/font_menu.h`, and a
+  cut-down copy for TamaNest's own web pages in `main/font_p2_woff2.c`).
 - **Silkscreen** by Jason Kottke, SIL Open Font License 1.1 (`main/font_small.h`).
 
 ## Other components
 
 - **Board support** for the Waveshare ESP32-S3-Touch-AMOLED-2.16, Waveshare, Apache License 2.0 (`bsp/`, with changes listed in `bsp/README.md`).
 - **ESP-IDF**, **esp_tinyusb**, **esp_lvgl_adapter** and other Espressif components, Apache License 2.0.
-- **LVGL**, MIT License.
+- **LVGL**, MIT License, including Project Nayuki's **QR Code generator** library (MIT License), used for the QR
+  codes on the Wi-Fi screens.
+- **DNS server** for phone setup (`components/dns_server`), from Espressif's ESP-IDF captive portal example,
+  Unlicense OR CC0-1.0 (changed: task stack in PSRAM, clean shutdown).
 - **ESP Web Tools** (installer page, loaded from a CDN), Apache License 2.0.
 - **web-serial-polyfill** by Google LLC (installer page on Android, `web/web-serial-polyfill.js`), Apache License 2.0.
 
